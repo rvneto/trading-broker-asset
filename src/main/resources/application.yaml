@@ -55,3 +55,8 @@ springdoc:
     operations-sorter: alpha
   api-docs:
     path: /api-docs
+
+logging:
+  level:
+    root: ERROR
+    com.rvneto.broker.asset: DEBUG

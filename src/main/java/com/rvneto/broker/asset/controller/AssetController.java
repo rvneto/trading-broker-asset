@@ -1,6 +1,5 @@
 package com.rvneto.broker.asset.controller;
 
-import com.rvneto.broker.asset.domain.Asset;
 import com.rvneto.broker.asset.dto.AssetDTO;
 import com.rvneto.broker.asset.service.AssetService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,7 +13,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/assets")
@@ -35,16 +36,31 @@ public class AssetController {
 
     @GetMapping("/{ticker}")
     @Operation(
-            summary = "Search for asset by ticker",
-            description = "Validates the existence and returns details of a specific ticker."
+            summary = "Get asset details by ticker",
+            description = "Returns full asset details from the database. Intended for frontend use."
     )
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Asset found"),
             @ApiResponse(responseCode = "404", description = "Asset not found or inactive")
     })
     public ResponseEntity<AssetDTO> getByTicker(@PathVariable String ticker) {
-        return assetService.findByTicker(ticker)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+        return ResponseEntity.ok(assetService.findByTicker(ticker));
+    }
+
+    @GetMapping("/{ticker}/price")
+    @Operation(
+            summary = "Get current price by ticker",
+            description = "Returns the current price from Redis cache. Falls back to DB on cache miss. Intended for internal service use."
+    )
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Price found"),
+            @ApiResponse(responseCode = "404", description = "Asset not found or inactive")
+    })
+    public ResponseEntity<Map<String, Object>> getPriceByTicker(@PathVariable String ticker) {
+        BigDecimal price = assetService.getPriceByTicker(ticker);
+        return ResponseEntity.ok(Map.of(
+                "ticker", ticker.toUpperCase(),
+                "price", price
+        ));
     }
 }

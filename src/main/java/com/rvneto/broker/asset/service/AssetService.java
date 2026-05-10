@@ -10,9 +10,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.NoSuchElementException;
 
 @Service
 @RequiredArgsConstructor
@@ -34,7 +35,6 @@ public class AssetService {
 
         asset.setName(dto.getName());
         asset.setCurrentPrice(dto.getPrice());
-        // Use real market timestamp from event; fall back to now() if not provided
         asset.setLastUpdate(dto.getUpdatedAt() != null ? dto.getUpdatedAt() : LocalDateTime.now());
 
         assetRepository.save(asset);
@@ -45,15 +45,27 @@ public class AssetService {
     }
 
     public List<AssetDTO> findAllActive() {
-        // fix: query directly by status instead of loading all and filtering in memory
         return assetRepository.findAllByStatus(AssetStatus.ACTIVE).stream()
                 .map(AssetDTO::fromEntity)
                 .toList();
     }
 
-    public Optional<AssetDTO> findByTicker(String ticker) {
-        // fix: only return ACTIVE assets — inactive assets return empty (404)
+    public AssetDTO findByTicker(String ticker) {
+        // Full details — always reads from DB (used by frontend)
         return assetRepository.findByTickerAndStatus(ticker.toUpperCase(), AssetStatus.ACTIVE)
-                .map(AssetDTO::fromEntity);
+                .map(AssetDTO::fromEntity)
+                .orElseThrow(() -> new NoSuchElementException("Asset not found: " + ticker.toUpperCase()));
+    }
+
+    public BigDecimal getPriceByTicker(String ticker) {
+        // Cache-first — used by internal services (order-api) to avoid DB hits
+        return marketPriceCacheService.getPrice(ticker.toUpperCase())
+                .orElseGet(() -> {
+                    log.info("Cache miss for {}. Fetching from DB and populating cache.", ticker.toUpperCase());
+                    Asset asset = assetRepository.findByTickerAndStatus(ticker.toUpperCase(), AssetStatus.ACTIVE)
+                            .orElseThrow(() -> new NoSuchElementException("Asset not found or inactive: " + ticker.toUpperCase()));
+                    marketPriceCacheService.updatePrice(asset.getTicker(), asset.getCurrentPrice());
+                    return asset.getCurrentPrice();
+                });
     }
 }
